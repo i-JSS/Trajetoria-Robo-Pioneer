@@ -16,82 +16,65 @@ class Pioneer():
         self.posError = []
         self.Min_error_distance = 0.5
 
-    def connect_Pioneer(self, port):
 
+    def connect_pioneer(self, port):
         sim.simxFinish(-1)
         clientID = sim.simxStart('127.0.0.1', port, True, True, 2000, 5)
+
         if clientID == 0:
             print("Connect to", port)
         else:
             print("Can not connect to", port)
             return None
 
-        returnCode, robot = sim.simxGetObjectHandle(clientID, 'Pioneer_p3dx', sim.simx_opmode_blocking)  
-        returnCode, MotorE = sim.simxGetObjectHandle(clientID, 'Pioneer_p3dx_leftMotor', sim.simx_opmode_blocking)  
-        returnCode, MotorD = sim.simxGetObjectHandle(clientID, 'Pioneer_p3dx_rightMotor', sim.simx_opmode_blocking) 
+        returnCode, robot = sim.simxGetObjectHandle(clientID, 'Pioneer_p3dx', sim.simx_opmode_blocking)
+        returnCode, MotorE = sim.simxGetObjectHandle(clientID, 'Pioneer_p3dx_leftMotor', sim.simx_opmode_blocking)
+        returnCode, MotorD = sim.simxGetObjectHandle(clientID, 'Pioneer_p3dx_rightMotor', sim.simx_opmode_blocking)
         returnCode, ball = sim.simxGetObjectHandle(clientID, 'ball', sim.simx_opmode_blocking)
 
         return clientID, robot, MotorE, MotorD, ball
 
-    def Speed_Pioneer(self, U, omega, lock_stop_simulation, signed, error_phi):
 
-        L = 381  # Distance between the wheels
-        R = 95  # Wheel radio
+    def normalize_speed(self, speed):
+        return max(self.v_min_wheels, min(speed, self.v_max_wheels))
 
-        vd = ((2 * (U) + omega * L) / (2 * R))
-        vl = ((2 * (U) - omega * L) / (2 * R))
-        a = 1
 
-        Max_Speed = self.v_max_wheels
-        Min_Speed = self.v_min_wheels
-
-        if vd >= Max_Speed:
-            vd = Max_Speed
-        if vd <= Min_Speed:
-            vd = Min_Speed
-
-        if vl >= Max_Speed:
-            vl = Max_Speed
-        if vl <= Min_Speed:
-            vl = Min_Speed
-
+    def speed_pioneer(self, max_linear_speed, angular_speed, lock_stop_simulation, error_phi):
         if lock_stop_simulation == 1 and error_phi <= 0.08:
-            a = 0
-            vl = 0
-            vd = 0
+            return 0, 0, 0
 
-        return vl, vd, a
+        distance_between_wheels = 381
+        wheel_radio = 95
 
-    def PID_Controller_phi(self, kp, ki, kd, deltaT, error, interror, fant, Integral_part):
+        cinematic_right_speed = ((2 * max_linear_speed + angular_speed * distance_between_wheels) / (2 * wheel_radio))
+        cinematic_left_speed = ((2 * max_linear_speed - angular_speed * distance_between_wheels) / (2 * wheel_radio))
 
-        Integral_saturation = 10
+        return self.normalize_speed(cinematic_left_speed), self.normalize_speed(cinematic_right_speed), 1
 
-        ### Find the filter e ####
 
-        raizes = np.roots([kd, kp, ki])
-        absoluto = abs(raizes)
-        mayor = max(absoluto)
-        Filter_e = 1 / (mayor * 10)
+    def PID_controller(self, kp, ki, kd, delta_time, error, integral_error, fant, integral_part):
+        filter = 1 / (max(abs(np.roots([kd, kp, ki]))) * 10)
+        alpha_decay = mat.exp(-(delta_time / filter))
+        alpha = 1 - alpha_decay
+        integral_error = integral_error + error
+        derivative_value = alpha_decay  * fant + alpha * error
+        integral_saturation = 10
 
-        unomenosalfaana = mat.exp(-(deltaT / Filter_e))
-        alfaana = 1 - unomenosalfaana
-        interror = interror + error
-        f = unomenosalfaana * fant + alfaana * error
         if fant == 0:
-            deerror = (f / deltaT)
+            derivative_error = (derivative_value / delta_time)
         else:
-            deerror = (float((f - fant) / (deltaT)))
+            derivative_error = (float((derivative_value - fant) / delta_time))
 
-        if Integral_part > Integral_saturation:
-            Integral_part = Integral_saturation
-        elif Integral_part < -Integral_saturation:
-            Integral_part = -Integral_saturation
+        if integral_part > integral_saturation:
+            integral_part = integral_saturation
+        elif integral_part < -integral_saturation:
+            integral_part = -integral_saturation
         else:
-            Integral_part = ki * interror * deltaT
+            integral_part = ki * integral_error * delta_time
 
-        PID = kp * error + Integral_part + deerror * kd
+        PID = kp * error + integral_part + derivative_error * kd
+        return PID, derivative_value, integral_error, integral_part
 
-        return PID, f, interror, Integral_part
 
     def Robot_Pioneer(self, x, deltaT, filename):
 
@@ -99,7 +82,7 @@ class Pioneer():
         kii = x[1]
         kdi = x[2]
 
-        (clientID, robot, motorE, motorD, ball) = self.connect_Pioneer(19999)
+        (clientID, robot, motorE, motorD, ball) = self.connect_pioneer(19999)
 
         raizes = np.roots([kdi, kpi, kii])
         acumulate_error = 0
@@ -201,7 +184,7 @@ class Pioneer():
 
                     ### Implement the PID controller ###
 
-                    omega, fant_phi, interror_phi, Integral_part_phi = self.PID_Controller_phi(kpi, kii, kdi, deltaT,
+                    omega, fant_phi, interror_phi, Integral_part_phi = self.PID_controller(kpi, kii, kdi, deltaT,
                                                                                                error_phi, interror_phi,
                                                                                                fant_phi,
                                                                                                Integral_part_phi)
@@ -215,7 +198,7 @@ class Pioneer():
 
                     ### Calculate the speed right and left based on the topology robot ###
 
-                    vl, vd, a = self.Speed_Pioneer(controller_Linear, omega, lock_stop_simulation, signed,
+                    vl, vd, a = self.speed_pioneer(controller_Linear, omega, lock_stop_simulation,
                                                    abs(phid - self.phi))
 
                     print(f'Speed lef == {vl}, Speed Right == {vd}')
