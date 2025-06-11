@@ -13,7 +13,8 @@ class Pioneer:
         self.v_max_wheels = 15
         self.v_min_wheels = -15
         self.v_linear = 15
-        self.Min_error_distance = 0.5
+        self.min_error_distance = 0.5
+        (self.client_id, self.robot, self.left_motor, self.right_motor) = self.connect_pioneer(19999)
 
 
     def connect_pioneer(self, port):
@@ -26,12 +27,11 @@ class Pioneer:
             print("Can not connect to", port)
             return None
 
-        returnCode, robot = sim.simxGetObjectHandle(clientID, 'Pioneer_p3dx', sim.simx_opmode_blocking)
-        returnCode, MotorE = sim.simxGetObjectHandle(clientID, 'Pioneer_p3dx_leftMotor', sim.simx_opmode_blocking)
-        returnCode, MotorD = sim.simxGetObjectHandle(clientID, 'Pioneer_p3dx_rightMotor', sim.simx_opmode_blocking)
-        returnCode, ball = sim.simxGetObjectHandle(clientID, 'ball', sim.simx_opmode_blocking)
+        return_code, robot = sim.simxGetObjectHandle(clientID, 'Pioneer_p3dx', sim.simx_opmode_blocking)
+        return_code, left_motor = sim.simxGetObjectHandle(clientID, 'Pioneer_p3dx_leftMotor', sim.simx_opmode_blocking)
+        return_code, right_motor = sim.simxGetObjectHandle(clientID, 'Pioneer_p3dx_rightMotor', sim.simx_opmode_blocking)
 
-        return clientID, robot, MotorE, MotorD, ball
+        return clientID, robot, left_motor, right_motor
 
 
     def normalize_speed(self, speed):
@@ -75,45 +75,43 @@ class Pioneer:
         return PID, derivative_value, integral_error, integral_part
 
 
-    def Robot_Pioneer(self, pid_params, delta_time):
+    def move_to_object(self, pid_params, delta_time, target):
 
-        (clientID, robot, left_motor, right_motor, ball) = self.connect_pioneer(19999)
 
-        if sim.simxGetConnectionId(clientID) == -1:
+        if sim.simxGetConnectionId(self.client_id) == -1:
             print("Failed to connect to CoppeliaSim.")
             return
 
-
         kpi, kii, kdi = pid_params
 
-        omega_ant = 0
         is_running = True
         number_iterations = 0
+
         integral_error = 0
         derivative_value = 0
         integral_part = 0
 
         while is_running:
-
-            s, positiona = sim.simxGetObjectPosition(clientID, robot, -1, sim.simx_opmode_streaming)
+            return_code, robot_position = sim.simxGetObjectPosition(self.client_id, self.robot, -1, sim.simx_opmode_streaming)
 
             if number_iterations <= 1:
-                self._stop_robot(clientID, left_motor, right_motor)
+                self._stop_robot()
 
             else:
-                s, ball_pos = sim.simxGetObjectPosition(clientID, ball, -1, sim.simx_opmode_streaming)
-                returnCode, orientation = sim.simxGetObjectOrientation(clientID, robot, -1, sim.simx_opmode_blocking)
+                return_code, target_position = sim.simxGetObjectPosition(self.client_id, target, -1, sim.simx_opmode_streaming)
+                return_code, orientation = sim.simxGetObjectOrientation(self.client_id, self.robot, -1, sim.simx_opmode_blocking)
                 self.phi = orientation[2]
 
-                error_distance = math.sqrt((ball_pos[1] - positiona[1]) ** 2 + (ball_pos[0] - positiona[0]) ** 2)
+                error_distance = math.sqrt((target_position[1] - robot_position[1]) ** 2 + (target_position[0] - robot_position[0]) ** 2)
 
-                if error_distance >= self.Min_error_distance:
-                    phid = math.atan2(ball_pos[1] - positiona[1], ball_pos[0] - positiona[0])
+                if error_distance >= self.min_error_distance:
+                    phid = math.atan2(target_position[1] - robot_position[1], target_position[0] - robot_position[0])
                     controller_linear = self.v_linear * error_distance
                     lock_stop_simulation = 0
 
                 else:
-                    phid = 1.57  # 90
+                    # phid = 1.57  # 90
+                    # todo se ele pedir angulo final colocar aqui
                     controller_linear = 0
                     lock_stop_simulation = 1
 
@@ -121,27 +119,24 @@ class Pioneer:
                 error_phi = phid - self.phi
                 pid, derivative_value, integral_error, integral_part = (self.PID_controller(kpi, kii, kdi, delta_time, error_phi, integral_error, derivative_value, integral_part))
 
-                if pid >= 100 or pid <= -100:
-                    pid = omega_ant
-                else:
-                    omega_ant = pid
+                pid = max(-100, min(100, pid))
 
                 left_speed, right_speed, is_running = self.speed_pioneer(controller_linear, pid, lock_stop_simulation, abs(phid - self.phi))
 
-                sim.simxSetJointTargetVelocity(clientID, left_motor, left_speed, sim.simx_opmode_blocking)
-                sim.simxSetJointTargetVelocity(clientID, right_motor, right_speed, sim.simx_opmode_blocking)
+                sim.simxSetJointTargetVelocity(self.client_id, self.left_motor, left_speed, sim.simx_opmode_blocking)
+                sim.simxSetJointTargetVelocity(self.client_id, self.right_motor, right_speed, sim.simx_opmode_blocking)
 
+            self.y_out.append(robot_position[1])
+            self.x_out.append(robot_position[0])
 
             number_iterations += 1
-            self.y_out.append(positiona[1])
-            self.x_out.append(positiona[0])
 
         self._save_path_to_csv("Pioneer_experiment.csv")
 
 
-    def _stop_robot(self, clientID, left_motor, right_motor):
-        sim.simxSetJointTargetVelocity(clientID, left_motor, 0, sim.simx_opmode_blocking)
-        sim.simxSetJointTargetVelocity(clientID, right_motor, 0, sim.simx_opmode_blocking)
+    def _stop_robot(self):
+        sim.simxSetJointTargetVelocity(self.client_id, self.left_motor, 0, sim.simx_opmode_blocking)
+        sim.simxSetJointTargetVelocity(self.client_id, self.right_motor, 0, sim.simx_opmode_blocking)
 
 
     def _save_path_to_csv(self, filename):
@@ -156,11 +151,32 @@ class Pioneer:
         print(f"Data saved to {filename}")
 
 
+    def move_to_balls(self):
+        pid_params = [0.3413, 0.1230, 0.0049]
+        delta_time = 0.05
+
+        balls = self.find_all_balls()
+
+        if not balls:
+            print("Nenhuma bola encontrada.")
+            return
+
+        for name, handle in balls:
+            print(f"Movendo para {name}")
+            self.move_to_object(pid_params, delta_time, handle)
+
+    def find_all_balls(self):
+        ball_handles = []
+        i = -1
+        while True:
+            name = 'ball' if i == -1 else f'ball{i}'
+            return_code, handle = sim.simxGetObjectHandle(self.client_id, name, sim.simx_opmode_blocking)
+            if return_code == 0:
+                ball_handles.append((name, handle))
+                i += 1
+            else:
+                return ball_handles
+
 if __name__ == "__main__":
     pioneer = Pioneer()
-
-
-    pid_params = [0.3413, 0.1230, 0.0049]
-    deltaT = 0.05
-    pioneer.Robot_Pioneer(pid_params, deltaT)
-
+    pioneer.move_to_balls()
