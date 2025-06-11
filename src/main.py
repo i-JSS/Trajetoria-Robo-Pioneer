@@ -2,11 +2,13 @@ import csv
 import math
 import math as mat
 import numpy as np
+import matplotlib.pyplot as plt
+
 from src.lib import sim
 
 class Pioneer:
 
-    def __init__(self):
+    def __init__(self, data):
         self.y_out = []
         self.x_out = []
         self.phi = 0
@@ -14,24 +16,26 @@ class Pioneer:
         self.v_min_wheels = -15
         self.v_linear = 15
         self.min_error_distance = 0.5
+        self.data = data
+        self._clean_csv()
         (self.client_id, self.robot, self.left_motor, self.right_motor) = self.connect_pioneer(19999)
 
 
     def connect_pioneer(self, port):
         sim.simxFinish(-1)
-        clientID = sim.simxStart('127.0.0.1', port, True, True, 2000, 5)
+        client_id = sim.simxStart('127.0.0.1', port, True, True, 2000, 5)
 
-        if clientID == 0:
+        if client_id == 0:
             print("Connect to", port)
         else:
             print("Can not connect to", port)
             return None
 
-        return_code, robot = sim.simxGetObjectHandle(clientID, 'Pioneer_p3dx', sim.simx_opmode_blocking)
-        return_code, left_motor = sim.simxGetObjectHandle(clientID, 'Pioneer_p3dx_leftMotor', sim.simx_opmode_blocking)
-        return_code, right_motor = sim.simxGetObjectHandle(clientID, 'Pioneer_p3dx_rightMotor', sim.simx_opmode_blocking)
+        return_code, robot = sim.simxGetObjectHandle(client_id, 'Pioneer_p3dx', sim.simx_opmode_blocking)
+        return_code, left_motor = sim.simxGetObjectHandle(client_id, 'Pioneer_p3dx_leftMotor', sim.simx_opmode_blocking)
+        return_code, right_motor = sim.simxGetObjectHandle(client_id, 'Pioneer_p3dx_rightMotor', sim.simx_opmode_blocking)
 
-        return clientID, robot, left_motor, right_motor
+        return client_id, robot, left_motor, right_motor
 
 
     def normalize_speed(self, speed):
@@ -66,18 +70,17 @@ class Pioneer:
 
         if integral_part > integral_saturation:
             integral_part = integral_saturation
+
         elif integral_part < -integral_saturation:
             integral_part = -integral_saturation
         else:
             integral_part = ki * integral_error * delta_time
 
-        PID = kp * error + integral_part + derivative_error * kd
-        return PID, derivative_value, integral_error, integral_part
+        pid = kp * error + integral_part + derivative_error * kd
+        return pid, derivative_value, integral_error, integral_part
 
 
     def move_to_object(self, pid_params, delta_time, target):
-
-
         if sim.simxGetConnectionId(self.client_id) == -1:
             print("Failed to connect to CoppeliaSim.")
             return
@@ -131,7 +134,7 @@ class Pioneer:
 
             number_iterations += 1
 
-        self._save_path_to_csv("Pioneer_experiment.csv")
+        self._save_path_to_csv()
 
 
     def _stop_robot(self):
@@ -139,16 +142,41 @@ class Pioneer:
         sim.simxSetJointTargetVelocity(self.client_id, self.right_motor, 0, sim.simx_opmode_blocking)
 
 
-    def _save_path_to_csv(self, filename):
+    def _save_path_to_csv(self):
         if len(self.y_out) != len(self.x_out):
             raise ValueError("Mismatch in recorded X and Y positions")
 
-        with open(filename, mode='w', newline='') as file:
+        with open(self.data, mode='w', newline='') as file:
             writer = csv.writer(file)
             writer.writerow(['x_out', 'y_out'])
             for x, y in zip(self.x_out, self.y_out):
                 writer.writerow([x, y])
-        print(f"Data saved to {filename}")
+        print(f"Data saved to {self.data}")
+
+
+    def _clean_csv(self):
+        with open(self.data, mode='w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow(['x_out', 'y_out'])
+
+
+    def plot_trajectory(self):
+        data = np.loadtxt(self.data, delimiter=",", skiprows=2)
+
+        x = data[:, 0]
+        y = data[:, 1]
+
+        plt.figure(figsize=(8, 6))
+        plt.plot(x, y, marker='o', linestyle='-', color='blue', label='Caminho do robô')
+        plt.plot(x[0], y[0], 'go', label='Início')
+        plt.plot(x[-1], y[-1], 'ro', label='Fim')
+        plt.title('Trajetória do Robô')
+        plt.xlabel('X')
+        plt.ylabel('Y')
+        plt.grid(True)
+        plt.axis('equal')
+        plt.legend()
+        plt.show()
 
 
     def move_to_balls(self):
@@ -165,6 +193,7 @@ class Pioneer:
             print(f"Movendo para {name}")
             self.move_to_object(pid_params, delta_time, handle)
 
+
     def find_all_balls(self):
         ball_handles = []
         i = -1
@@ -177,6 +206,8 @@ class Pioneer:
             else:
                 return ball_handles
 
+
 if __name__ == "__main__":
-    pioneer = Pioneer()
+    pioneer = Pioneer("trajectory.csv")
     pioneer.move_to_balls()
+    pioneer.plot_trajectory()
