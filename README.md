@@ -11,7 +11,8 @@
 
 Controle de trajetória do robo Pioneer para atingir multiplas bolas, fazendo o melhor caminho entre as bolas utilizando uma arvore geradora mínima e controlando a movimentação do robo por meio da cinematica direta.
 
-> O trabalho irá plotar a trajetória que o robo realizará em seguida irá movimentar o mesmo com o controle PID.
+O pioneer irá realizar a trajetória buscando todas as bolas e salvar cada ponto que ele passou no arquivo trajectory.csv em seguida ao fim da trajetória será plotado os pontos que ele passou. 
+
 
 Plot da trajetória a um ponto fixo:
 
@@ -24,6 +25,13 @@ Plot da trajetória a um ponto variável, movimentando o ponto no decorrer do te
 Plot da trajetória de multiplos pontos:
 
 ![trajetória de multiplos](src/images/pontosmultiplos.png)
+
+Observação: As equações utilizadas estão na linha 52 e 53 do arquivo main:
+
+````python
+cinematic_right_speed = ((2 * max_linear_speed + angular_speed * distance_between_wheels) / (2 * wheel_radio))
+cinematic_left_speed = ((2 * max_linear_speed - angular_speed * distance_between_wheels) / (2 * wheel_radio))
+````
 
 ---
 
