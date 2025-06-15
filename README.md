@@ -13,6 +13,9 @@ Controle de trajetória do robo Pioneer para atingir multiplas bolas, fazendo o 
 
 O pioneer irá realizar a trajetória buscando todas as bolas e salvar cada ponto que ele passou no arquivo trajectory.csv em seguida ao fim da trajetória será plotado os pontos que ele passou. 
 
+> Utilizei a controladora PID fornecida pelo Mario e o código atual é uma adaptação do código fornecido pelo Mário.
+
+Para assistir a apresentação basta clicar [aqui](https://youtu.be/IyeMBYNV4kM?si=hNHizlWCnDepZnO3).
 
 Plot da trajetória a um ponto fixo:
 
@@ -48,3 +51,11 @@ Biblioteca: numpy e matplotlib.pyplot
 Para única bola - abrir o arquivo **pioneer_one_ball.ttt** no coppeliaSim e executar o script **main.py**
 
 Para multiplas bolas - abrir o arquivo **pioneer_multiples_balls.ttt** no coppeliaSim e executar o script **main.py**
+
+---
+
+## Apresentação
+
+Link da apresentação:
+
+https://youtu.be/IyeMBYNV4kM?si=hNHizlWCnDepZnO3
