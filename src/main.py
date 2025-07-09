@@ -80,7 +80,7 @@ class Pioneer:
         return pid, derivative_value, integral_error, integral_part
 
 
-    def move_to_object(self, pid_params, delta_time, target):
+    def move_to_position(self, pid_params, delta_time, target_x, target_y):
         if sim.simxGetConnectionId(self.client_id) == -1:
             print("Failed to connect to CoppeliaSim.")
             return
@@ -95,36 +95,37 @@ class Pioneer:
         integral_part = 0
 
         while is_running:
-            return_code, robot_position = sim.simxGetObjectPosition(self.client_id, self.robot, -1, sim.simx_opmode_streaming)
+            return_code, robot_position = sim.simxGetObjectPosition(self.client_id, self.robot, -1,
+                                                                    sim.simx_opmode_streaming)
 
             if number_iterations <= 1:
                 self._stop_robot()
-
             else:
-                return_code, target_position = sim.simxGetObjectPosition(self.client_id, target, -1, sim.simx_opmode_streaming)
-                return_code, orientation = sim.simxGetObjectOrientation(self.client_id, self.robot, -1, sim.simx_opmode_blocking)
+                return_code, orientation = sim.simxGetObjectOrientation(self.client_id, self.robot, -1,
+                                                                        sim.simx_opmode_blocking)
                 self.phi = orientation[2]
 
-                error_distance = math.sqrt((target_position[1] - robot_position[1]) ** 2 + (target_position[0] - robot_position[0]) ** 2)
+                error_distance = math.sqrt((target_y - robot_position[1]) ** 2 + (target_x - robot_position[0]) ** 2)
 
                 if error_distance >= self.min_error_distance:
-                    phid = math.atan2(target_position[1] - robot_position[1], target_position[0] - robot_position[0])
+                    phid = math.atan2(target_y - robot_position[1], target_x - robot_position[0])
                     controller_linear = self.v_linear * error_distance
                     lock_stop_simulation = 0
-
                 else:
-                    # phid = 1.57  # 90
-                    # todo se ele pedir angulo final colocar aqui
                     controller_linear = 0
                     lock_stop_simulation = 1
 
-
                 error_phi = phid - self.phi
-                pid, derivative_value, integral_error, integral_part = (self.PID_controller(kpi, kii, kdi, delta_time, error_phi, integral_error, derivative_value, integral_part))
+                pid, derivative_value, integral_error, integral_part = (
+                    self.PID_controller(kpi, kii, kdi, delta_time, error_phi, integral_error, derivative_value,
+                                        integral_part)
+                )
 
                 pid = max(-100, min(100, pid))
 
-                left_speed, right_speed, is_running = self.speed_pioneer(controller_linear, pid, lock_stop_simulation, abs(phid - self.phi))
+                left_speed, right_speed, is_running = self.speed_pioneer(
+                    controller_linear, pid, lock_stop_simulation, abs(phid - self.phi)
+                )
 
                 sim.simxSetJointTargetVelocity(self.client_id, self.left_motor, left_speed, sim.simx_opmode_blocking)
                 sim.simxSetJointTargetVelocity(self.client_id, self.right_motor, right_speed, sim.simx_opmode_blocking)
@@ -135,7 +136,6 @@ class Pioneer:
             number_iterations += 1
 
         self._save_path_to_csv()
-
 
     def _stop_robot(self):
         sim.simxSetJointTargetVelocity(self.client_id, self.left_motor, 0, sim.simx_opmode_blocking)
@@ -151,7 +151,7 @@ class Pioneer:
             writer.writerow(['x_out', 'y_out'])
             for x, y in zip(self.x_out, self.y_out):
                 writer.writerow([x, y])
-        print(f"Data saved to {self.data}")
+        print(f"Dado salvo em {self.data}")
 
 
     def _clean_csv(self):
@@ -191,7 +191,9 @@ class Pioneer:
 
         for name, handle in balls:
             print(f"Movendo para {name}")
-            self.move_to_object(pid_params, delta_time, handle)
+            return_code, position = sim.simxGetObjectPosition(self.client_id, handle, -1, sim.simx_opmode_blocking)
+            target_x, target_y = position[0], position[1]
+            self.move_to_position(pid_params, delta_time, target_x, target_y)
 
 
     def find_all_balls(self):
