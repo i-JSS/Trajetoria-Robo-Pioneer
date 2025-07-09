@@ -41,17 +41,18 @@ class Pioneer:
     def normalize_speed(self, speed):
         return max(self.v_min_wheels, min(speed, self.v_max_wheels))
 
+
     def speed_pioneer(self, max_linear_speed, angular_speed, lock_stop_simulation, error_phi):
         if lock_stop_simulation == 1 and error_phi <= 0.08:
             return 0, 0, False
 
-        distance_between_wheels = 0.381  # metros
-        wheel_radius = 0.095  # metros
+        distance_between_wheels = 381
+        wheel_radio = 95
 
-        v_r = (2 * max_linear_speed + angular_speed * distance_between_wheels) / (2 * wheel_radius)
-        v_l = (2 * max_linear_speed - angular_speed * distance_between_wheels) / (2 * wheel_radius)
+        cinematic_right_speed = ((2 * max_linear_speed + angular_speed * distance_between_wheels) / (2 * wheel_radio))
+        cinematic_left_speed = ((2 * max_linear_speed - angular_speed * distance_between_wheels) / (2 * wheel_radio))
 
-        return self.normalize_speed(v_l), self.normalize_speed(v_r), True
+        return self.normalize_speed(cinematic_left_speed), self.normalize_speed(cinematic_right_speed), True
 
 
     def PID_controller(self, kp, ki, kd, delta_time, error, integral_error, fant, integral_part):
@@ -208,82 +209,7 @@ class Pioneer:
                 return ball_handles
 
 
-    def move_arc(self, isleft):
-        if sim.simxGetConnectionId(self.client_id) == -1:
-            print("Erro: não conectado ao CoppeliaSim.")
-            return
-
-        self._stop_robot()
-
-        number_iterations = 0
-        delta_time = 0.44
-        max_iterations = int(10 / delta_time)
-
-        sim.simxGetObjectPosition(self.client_id, self.robot, -1, sim.simx_opmode_streaming)
-        sim.simxGetObjectOrientation(self.client_id, self.robot, -1, sim.simx_opmode_streaming)
-
-        while number_iterations < max_iterations:
-            _, position = sim.simxGetObjectPosition(self.client_id, self.robot, -1, sim.simx_opmode_buffer)
-            _, orientation = sim.simxGetObjectOrientation(self.client_id, self.robot, -1, sim.simx_opmode_buffer)
-            self.phi = orientation[2]
-
-
-            controller_linear = 0.5
-            lock_stop_simulation = 0
-
-            if isleft:
-                direction = -0.5
-            else:
-                direction = 0.5
-            omega = controller_linear / direction
-
-            vl, vr, _ = self.speed_pioneer(controller_linear, omega, lock_stop_simulation, 0)
-
-            print(f'Iteração {number_iterations}: Velocidade esquerda = {vl}, direita = {vr}')
-
-            sim.simxSetJointTargetVelocity(self.client_id, self.left_motor, vl, sim.simx_opmode_blocking)
-            sim.simxSetJointTargetVelocity(self.client_id, self.right_motor, vr, sim.simx_opmode_blocking)
-
-            self.x_out.append(position[0])
-            self.y_out.append(position[1])
-
-            number_iterations += 1
-
-        self._stop_robot()
-        self._save_path_to_csv()
-
-    def make_trajectory(self):
-        if sim.simxGetConnectionId(self.client_id) == -1:
-            print("Erro: não conectado ao CoppeliaSim.")
-            return
-
-        return_code, ball = sim.simxGetObjectHandle(self.client_id, "ball", sim.simx_opmode_blocking)
-        return_code, ball_position = sim.simxGetObjectPosition(self.client_id, ball, -1, sim.simx_opmode_blocking)
-        target_x, target_y = ball_position[0], ball_position[1]
-
-        pid_params = [0.3413, 0.1230, 0.0049]
-        delta_time = 0.05
-
-
-        return_code, robot_position = sim.simxGetObjectPosition(self.client_id, self.robot, -1, sim.simx_opmode_blocking)
-        robot_x = robot_position[0]
-
-        if abs(robot_x - target_x) < 0.01:
-            self.move_to_position(pid_params, delta_time, robot_position[0], target_y)
-            return
-        else:
-            self.move_to_position(pid_params, delta_time,  robot_position[0], 0.5)
-
-            self.move_arc(robot_x < target_x)
-
-            return_code, robot_position = sim.simxGetObjectPosition(self.client_id, self.robot, -1, sim.simx_opmode_blocking)
-            robot_y = robot_position[1]
-
-            self.move_to_position(pid_params, delta_time, 1, robot_y)
-
-
 if __name__ == "__main__":
     pioneer = Pioneer("trajectory.csv")
-    # pioneer.move_to_balls()
-    pioneer.make_trajectory()
+    pioneer.move_to_balls()
     pioneer.plot_trajectory()
